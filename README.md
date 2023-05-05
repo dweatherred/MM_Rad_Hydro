@@ -1,1 +1,1 @@
-
+This code solves the radiation hydrodynamics equations on a moving Eulerian mesh. The hydrodynamics is solved explicitly using second order in space and time. The radiation is solved implicitly using the diffusion approximation. 
