@@ -1,5 +1,5 @@
 //
-// Main function file for the MM Eularian Radiation-Hydrodynamics Problem. This file reads the output from Lua_Script.lua
+// Main function file for the MM Eularian Radiation-Hydrodynamics Mehtod. This file reads the output from Lua_Script.lua
 // and passes them into the appropriate functions.
 //
 
@@ -79,7 +79,5 @@ int main (){
 
     //call main functions for different rad-hydro methods
     mm_eularian_rh(dt, ti, tf, dx, xl_bound, xr_bound, n_cells);
-
-
     return 0;
 }

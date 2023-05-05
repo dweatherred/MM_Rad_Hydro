@@ -1,13 +1,13 @@
 
 timing = {}
-timing["dt"] = 1.0E-12 
+timing["dt"] = 1.0E-12
 timing["time_initial"] = 0
-timing["time_final"] = 5.0E-9  --seconds
+timing["time_final"] = 1.0E-7  --seconds
 
 spatial_cells = {}
 spatial_cells["xl_bound"] = 0 --cm
-spatial_cells["xr_bound"] = 2 -- cm
-spatial_cells["num_cells"] = 9000
+spatial_cells["xr_bound"] = 0.2 -- cm
+spatial_cells["num_cells"] = 500 --500 --9000
 
 -- Shock wave input
 --[[
@@ -20,6 +20,16 @@ spatial_cells = {}
 spatial_cells["xl_bound"] = 0 --cm
 spatial_cells["xr_bound"] = 1 -- cm
 spatial_cells["num_cells"] = 9000
+
+timing = {}
+timing["dt"] = 1.0E-12 
+timing["time_initial"] = 0
+timing["time_final"] = 5.0E-9  --seconds
+
+spatial_cells = {}
+spatial_cells["xl_bound"] = 0 --cm
+spatial_cells["xr_bound"] = 0.4 -- cm
+spatial_cells["num_cells"] = 1000 --500 --9000
 ]]--
 
 -- Sod Shock Input

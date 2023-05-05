@@ -5,26 +5,25 @@
 #include <vector>
 
 //!Initialize Radiaition and Material Properties
-double evaluate_opc(const double T, int p){
-    if(p==0){ //Shock wave problem
+double evaluate_opc(const double T, int q){
+    if(q==0){ //Shock wave problem
         return  577.35;
-    }else if(p==1){ //Marshak Wave
+    }else if(q==1){ //Marshak Wave
         return 1.0E+6/ pow(T, 3);
     }
 }
 
-double evaluate_cv(const double T, double a, int p){
+double evaluate_cv(const double T, double a, int q){
     
-    if(p==0){ //Shock wave
-        return  1.44728E+12;
-    }else if (p==1){ //Marshak Wave
+    if(q==0){ //Shock wave
+        return 1.4467E+12;;
+    }else if (q==1){ //Marshak Wave
         return 1.3487E+11;
     }
-    //4 * a * pow(T, 3); 
 }
 
 
-void rad_initialize(std::vector<double> &T0_r, std::vector<double> &E0_r, double E_total,
+void rad_initialize(std::vector<double> &T0_r, std::vector<double> &E0_r, std::vector<double> &Er_in, double E_total,
                     std::vector<double> &T0_m, std::vector<double> &E0_m, std::vector<double> &Ek,
                     std::vector<double> &Tk, std::vector<double> &opc, std::vector<double> &abs,
                     std::vector<double> &emis, std::vector<double> &rho, std::vector<double> &cv,
@@ -32,6 +31,12 @@ void rad_initialize(std::vector<double> &T0_r, std::vector<double> &E0_r, double
 
     int n = abs.size();
     int q;
+
+    if(p==3){
+        q=1;
+    }else{
+        q=0;
+    }//q=0 shock wave, q=1 marshak
 
     for(int j=0; j<n; j++){
         //Temperature
@@ -60,15 +65,16 @@ void rad_initialize(std::vector<double> &T0_r, std::vector<double> &E0_r, double
         }
 
         //Initialize specific heat capacity in each cell
-        cv[j] = evaluate_cv(T0_m[j], a, q=0); //q=0 shock wave, q=1 marshak
+        cv[j] = evaluate_cv(T0_m[j], a, q);
 
         //Energy
         E0_r[j] = (a * pow(T0_r[j],4)); // erg/cc
         E0_m[j] = rho[j] * cv[j] * T0_m[j]; // erg/cc
         E_total = E0_r[j] + (rho[j] * cv[j] * T0_m[j]);
+        Er_in[j] = E0_r[j];
 
         //Inital opacity in each cell
-        opc[j] = evaluate_opc(T0_m[j], q=0); //q=0 shock wave, q=1 marshak
+        opc[j] = evaluate_opc(T0_m[j], q);
 
         //Abs and Emis
         abs[j] = opc[j] * c * E0_r[j];
@@ -81,15 +87,55 @@ void rad_initialize(std::vector<double> &T0_r, std::vector<double> &E0_r, double
         //Radiation Pressure
         if (p==2){
             Pr[j] = 0;
-        }
-        else{
+        }else{
             Pr[j] = E0_r[j]/3.0; 
         }
     } 
 }
 
-//! Radiation MMC
+void moving_shock_rad_init(std::vector<double> &T0_r, std::vector<double> &E0_r, std::vector<double> &Er_in, double E_total,
+                           std::vector<double> &T0_m, std::vector<double> &E0_m, std::vector<double> &Ek,
+                           std::vector<double> &Tk, std::vector<double> &opc, std::vector<double> &abs,
+                           std::vector<double> &emis, std::vector<double> &rho, std::vector<double> &cv,
+                           std::vector<double> &Pr, double a, double c, double dx, double xf){
+    int n = abs.size();
+    int q=0;
 
+    for(int j=0; j<n; j++){
+        if((j+0.5)*dx < xf/2){
+                T0_r[j] = 100;
+                T0_m[j] = 100;
+            }else{
+                T0_r[j] = 120.5;
+                T0_m[j] = 120.5;
+        }
+
+        //Initialize specific heat capacity in each cell
+        cv[j] = evaluate_cv(T0_m[j], a, q);
+
+        //Energy
+        E0_r[j] = (a * pow(T0_r[j],4)); // erg/cc
+        E0_m[j] = rho[j] * cv[j] * T0_m[j]; // erg/cc
+        E_total = E0_r[j] + (rho[j] * cv[j] * T0_m[j]);
+        Er_in[j] = E0_r[j];
+
+        //Inital opacity in each cell
+        opc[j] = evaluate_opc(T0_m[j], q);
+
+        //Abs and Emis
+        abs[j] = opc[j] * c * E0_r[j];
+        emis[j] = opc[j] * a * c * pow(T0_m[j],4);
+
+        //Ek and Tk for Newton's Method
+        Ek[j] = E0_r[j];
+        Tk[j] = T0_m[j];
+
+        //Radiation Pressure
+        Pr[j] = E0_r[j]/3.0; 
+    }
+}
+
+//! Radiation MMC
 void rad_mmc(const std::vector<double> &E0_r, const std::vector<double> &Pr, const std::vector<double> &grad_u,
              const std::vector<double> &lu_Er, const std::vector<double> &vol_old, const std::vector<double> &vol, 
              std::vector<double> &Es_r,  double dt){
@@ -100,7 +146,6 @@ void rad_mmc(const std::vector<double> &E0_r, const std::vector<double> &Pr, con
         Es_r[i] = E0_r[i]*vol_old[i] - dt * (lu_Er[i] + Pr[i]*grad_u[i]);
         Es_r[i] = Es_r[i] / vol[i];
     }
-
 }
 
 //!Radiation Solve
@@ -113,15 +158,20 @@ void setup(std::vector<double> &opc, const std::vector<double> &T0_m, std::vecto
     int n=opc.size();
     int q;
 
+    if(p==1){
+        q=1;
+    }else{
+        q=0;
+    }//q=0 shock wave, q=1 marshak
+
     //Setup Loop (Diffusion Coefficients and Opacity), Constant over timestep
     for(int i=0; i<n; i++){
-        opc[i] = evaluate_opc(T0_m[i], q=0); //q=0 shock wave, q=1 marshak
-        cv[i] = evaluate_cv(T0_m[i], a, q=0); //q=0 shock wave, q=1 marshak
+        opc[i] = evaluate_opc(T0_m[i], q); //q=0 shock wave, q=1 marshak
+        cv[i] = evaluate_cv(T0_m[i], a, q); //q=0 shock wave, q=1 marshak
         D[i] = c /(3 * opc[i]);
     }
 
     if(p==0){
-
         for(int l=0; l<n; l++){
             //+1/2 and -1/2 Diffusion Terms
             if(l==n-1){
@@ -129,7 +179,6 @@ void setup(std::vector<double> &opc, const std::vector<double> &T0_m, std::vecto
             }else{
                 Dp[l] =  2 * D[l] * D[l+1] / (D[l] + D[l+1]);
             }
-
             if(l==0){
                 Dm[l] = D[l];
             }else{
@@ -138,21 +187,19 @@ void setup(std::vector<double> &opc, const std::vector<double> &T0_m, std::vecto
         }
 
     }else{ //For marshak problem
-
         for(int l=0; l<n; l++){
             //+1/2 and -1/2 Diffusion Terms
             if(l==n-1){
                 Dp[l] = D[l];
             }else{
                 double Tf = (T0_m[l] + T0_m[l+1]) * 0.5; 
-                Dp[l] = c/(3 * evaluate_opc(Tf, q=1)); //q=0 shock wave, q=1 marshak
+                Dp[l] = c/(3 * evaluate_opc(Tf, q));
             }
-
             if(l==0){
                 Dm[l] = D[l];
             }else{
                 double Tf = (T0_m[l] + T0_m[l-1]) * 0.5;
-                Dm[l] = c/(3 * evaluate_opc(Tf, q=1)); //q=0 shock wave, q=1 marshak
+                Dm[l] = c/(3 * evaluate_opc(Tf, q));
             }
         }
     }
@@ -192,51 +239,51 @@ void newtons(const std::vector<double> &Ek, const std::vector<double> &Th, const
     }
 }
 
-
 //Matrix setup for Implicit 1-D problem with diffusion
-
 void matrix(const std::vector<double> &Tk, const std::vector<double> &Es_r, const std::vector<double> &opc, 
             const std::vector<double> &Dp, const std::vector<double> &Dm, const std::vector<double> &vol,
-            std::vector<double> &plus, std::vector<double> &mid, std::vector<double> &minus, 
-            std::vector<double> &rs, const double dt, const double c, const double a, int p){
+            std::vector<double> &plus, std::vector<double> &mid, std::vector<double> &minus, std::vector<double> &rs,
+            std::vector<double> &x_new, const double dt, const double c, const double a, int p){
 
     int n=plus.size();
 
-    if(p==0){ //zero boundary condition
-        
-        for(int i=0; i<n; i++){
+    std::vector<double> dx_i(n,0);
+    std::vector<double> dx_i_hf_m(n,0);
+    std::vector<double> dx_i_hf_p(n,0);
 
-            //upper diagonal
-            plus[i] = -Dp[i] / pow(vol[i],2); 
+    //Find dx values
 
-            //main Diagonal
-            mid[i] = 1/dt + Dp[i]/pow(vol[i],2) + Dm[i]/pow(vol[i],2) + (opc[i] * c);
-
-            //lower diagonal
-            minus[i] = -Dm[i] / pow(vol[i],2);
-
-            //Right Side of Equation
-            rs[i] = (opc[i] * a * c * pow(Tk[i],4)) + (Es_r[i]/dt);            
+    for(int i=0; i<n; i++){
+        dx_i[i] = x_new[i+1] - x_new[i];
+    }
+    for(int i=0; i<n; i++){
+        if(i==0){
+            dx_i_hf_m[i] = dx_i[i]/2;
+            dx_i_hf_p[i] = (dx_i[i] + dx_i[i+1])/2;
+        }else if (i==n-1){
+            dx_i_hf_m[i] = (dx_i[i] + dx_i[i-1])/2;
+            dx_i_hf_p[i] = dx_i[i]/2;
+        }else{
+            dx_i_hf_m[i] = (dx_i[i] + dx_i[i-1])/2;
+            dx_i_hf_p[i] = (dx_i[i] + dx_i[i+1])/2;
         }
-
-    }else if (p==1) {//Marshak wave boundary conditon
+         
+    }
+    if (p==1){//Marshak wave boundary conditon
         for(int j=0; j<n; j++){
             //upper diagonal
-            plus[j] = -Dp[j] / pow(vol[j],2); 
-
+            plus[j] = - (Dp[j] / dx_i[j]) * (1/dx_i_hf_p[j]);
             //main Diagonal
             if(j==0){
-                mid[j] = 1/dt + c/(2*vol[j]) + Dp[j]/pow(vol[j],2) + (opc[j] * c);
+                mid[j] = 1/dt + c/(2*dx_i[j]) + ((Dp[j]/dx_i[j]) * (1/dx_i_hf_p[j])) + (opc[j] * c);
             }else{
-                mid[j] = 1/dt + Dp[j]/pow(vol[j],2) + Dm[j]/pow(vol[j],2) + (opc[j] * c);
+                mid[j] = 1/dt + ((Dp[j]/dx_i[j]) * (1/dx_i_hf_p[j])) + ((Dm[j]/dx_i[j]) * (1/dx_i_hf_m[j])) + (opc[j] * c);
             }
-
             //lower diagonal
-            minus[j] = -Dm[j] / pow(vol[j],2);
-
+            minus[j] = -(Dm[j]/dx_i[j]) * (1/dx_i_hf_m[j]);
             //Right Side of Equation
             if(j==0){
-                rs[j] = opc[j] * a * c * pow(Tk[j],4) + ( c * a * pow(150,4) * 0.5 )/vol[j]  + Es_r[j]/dt;
+                rs[j] = opc[j] * a * c * pow(Tk[j],4) + (c * a * pow(150,4) * 0.5)/dx_i[j] + Es_r[j]/dt;
             }else{
                 rs[j] = (opc[j] * a * c * pow(Tk[j],4)) + (Es_r[j]/dt);
             }
@@ -245,39 +292,31 @@ void matrix(const std::vector<double> &Tk, const std::vector<double> &Es_r, cons
         for(int i=0; i<n; i++){
             if(i==0){
                 //upper diagonal
-                plus[i] = -Dp[i] / pow(vol[i],2); 
-
+                plus[i] = - (Dp[i] / dx_i[i]) * (1/dx_i_hf_p[i]);
                 //main Diagonal
-                mid[i] = 1/dt + Dp[i]/pow(vol[i],2) + (opc[i] * c);
-
+                mid[i] = 1/dt + ((Dp[i]/dx_i[i]) * (1/dx_i_hf_p[i])) + (opc[i] * c);
                 //lower diagonal
                 minus[i] = 0;
-
                 //Right Side of Equation
                 rs[i] = (opc[i] * a * c * pow(Tk[i],4)) + (Es_r[i]/dt);
-            }else if (i==n-1){
 
+            }else if (i==n-1){
                 //upper diagonal
                 plus[i] = 0; 
-
                 //main Diagonal
-                mid[i] =  mid[i] = 1/dt + Dm[i]/pow(vol[i],2) + (opc[i] * c);
-
+                mid[i] = 1/dt + ((Dm[i]/dx_i[i]) * (1/dx_i_hf_m[i])) + (opc[i] * c);
                 //lower diagonal
-                minus[i] =  -Dm[i] / pow(vol[i],2);
-
+                minus[i] = - ((Dm[i]/dx_i[i]) * (1/dx_i_hf_m[i]));
                 //Right Side of Equation
                 rs[i] = (opc[i] * a * c * pow(Tk[i],4)) + (Es_r[i]/dt);
+
             }else{
                 //upper diagonal
-                plus[i] = -Dp[i] / pow(vol[i],2); 
-
+                plus[i] = -(Dp[i] / dx_i[i]) * (1/dx_i_hf_p[i]); 
                 //main Diagonal
-                mid[i] = 1/dt + Dp[i]/pow(vol[i],2) + Dm[i]/pow(vol[i],2) + (opc[i] * c);
-
+                mid[i] = 1/dt + ((Dp[i]/dx_i[i]) * (1/dx_i_hf_p[i])) + ((Dm[i]/dx_i[i]) * (1/dx_i_hf_m[i])) + (opc[i] * c);
                 //lower diagonal
-                minus[i] = -Dm[i] / pow(vol[i],2);
-
+                minus[i] = -((Dm[i]/dx_i[i]) * (1/dx_i_hf_m[i]));
                 //Right Side of Equation
                 rs[i] = (opc[i] * a * c * pow(Tk[i],4)) + (Es_r[i]/dt);
             }
@@ -296,28 +335,21 @@ void residual(const std::vector<double> &plus, const std::vector<double> &mid, c
       {
         double res(0);
         res = mid[j]*Er[j] + plus[j]*Er[j+1] - rs[j];
-        res0[j] = -res;
-        
-//        std::cout <<j << " res: " << res<< " " << Er[j]
-//                  << " rs: " << rs[j]<<std::endl;
-        
+        res0[j] = -res;        
       }
       else if(j==n-1)
       {
         double res(0);
         res = minus[j]*Er[j-1]+ mid[j]*Er[j]  - rs[j];
         res0[j] = -res;
-        
-//        std::cout <<j << " res: " << res<< " " << Er[j]<<std::endl;
       }
       else
       {
         double res(0);
         res = minus[j]*Er[j-1]+ mid[j]*Er[j] + plus[j]*Er[j+1] - rs[j];
         res0[j] = -res;
-//        std::cout <<j << " res: " << res<< " " << Er[j]<< " " << rs[j]<<std::endl;
       }
-    }//j
+    }
     
 }
 
